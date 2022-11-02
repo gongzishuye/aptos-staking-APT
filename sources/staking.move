@@ -34,10 +34,11 @@ module APTStacking::stacking {
         max_stack_amount: u64
     }
 
-    struct FreeAbilities has key {
+    struct GlobalInfo has key {
         burn: BurnCapability<FREE>,
         freeze: FreezeCapability<FREE>,
-        mint: MintCapability<FREE>
+        mint: MintCapability<FREE>,
+        resource_addr: address
     }
 
     fun init(admin: &signer, max_stack_amount: u64) {
@@ -45,8 +46,8 @@ module APTStacking::stacking {
         let admin_addr = signer::address_of(admin);
         assert!(admin_addr == @APTStacking, ERR_NOT_ADMIN);
 
-        let (signer, signer_cap) = account::create_resource_account(admin, b"FREE");
-        coin::register<AptosCoin>(&signer);
+        let (res_signer, signer_cap) = account::create_resource_account(admin, b"FREE");
+        coin::register<AptosCoin>(&res_signer);
         move_to<AgentInfo>(admin, AgentInfo {
             signer_cap,
             stack_amount: 0,
@@ -61,28 +62,30 @@ module APTStacking::stacking {
             true,
         );
 
-        coin::register<FREE>(&signer);
+        coin::register<FREE>(&res_signer);
         let total_coins = coin::mint(max_stack_amount * 2, &mint);
         coin::deposit(signer::address_of(&signer), total_coins);
 
-        move_to<FreeAbilities>(&signer, FreeAbilities {
-            burn, freeze, mint
+        let resource_addr = signer::address_of(&res_signer);
+        move_to<GlobalInfo>(&res_signer, GlobalInfo {
+            burn, freeze, mint, resource_addr
         });
     }
 
     /// 1. stacker transfer stack_amount APT to @Agent
     /// 2. @Agent add the stack_amount
-    fun stack(stacker: &signer, stack_amount: u64) acquires AgentInfo {
+    fun stack(stacker: &signer, stack_amount: u64) acquires AgentInfo, GlobalInfo {
         let stacker_addr = signer::address_of(stacker);
         if(!coin::is_account_registered<AptosCoin>(stacker_addr)) {
             coin::register<AptosCoin>(stacker);
         };
 
-        let agent_info = borrow_global_mut<AgentInfo>(@Agent);
+        let global_info = borrow_global_mut<GlobalInfo>(@APTStacking);
+        let agent_info = borrow_global_mut<AgentInfo>(global_info.resource_addr);
         let apt_balance = coin::balance<AptosCoin>(stacker_addr);
         assert!(apt_balance > stack_amount, ERR_NOT_ENOUGH_APT);
         let stack_coins = coin::withdraw<AptosCoin>(stacker, stack_amount);
-        coin::deposit(@Agent, stack_coins);
+        coin::deposit(global_info.resource_addr, stack_coins);
         assert!(agent_info.max_stack_amount >= agent_info.stack_amount + stack_amount, ERR_EXCEED_MAX_STAKE_AMOUNT);
         agent_info.stack_amount = agent_info.stack_amount + stack_amount;
 
@@ -96,14 +99,15 @@ module APTStacking::stacking {
     /// 1. verify whether stack expired
     /// 2. @Agent transfer stacked APT to stacker
     /// 3. @Agent transfer double amount APT to stacker
-    fun unstack(stacker: &signer) acquires StackInfo, AgentInfo {
+    fun unstack(stacker: &signer) acquires StackInfo, AgentInfo, GlobalInfo {
         let stacker_addr = signer::address_of(stacker);
         assert!(exists<StackInfo>(stacker_addr), ERR_USER_NOT_STAKE);
         assert!(stack_expire(stacker), ERR_NOT_EXPIRE);
 
         let stack_info = borrow_global<StackInfo>(stacker_addr);
 
-        let agent_info = borrow_global_mut<AgentInfo>(@Agent);
+        let global_info = borrow_global_mut<GlobalInfo>(@APTStacking);
+        let agent_info = borrow_global_mut<AgentInfo>(global_info.resource_addr);
         assert!(agent_info.stack_amount > stack_info.stack_amount, ERR_WRONG_STAKE_AMOUNT);
 
         let agent_signer = account::create_signer_with_capability(&agent_info.signer_cap);
