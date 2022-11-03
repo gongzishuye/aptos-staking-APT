@@ -3,7 +3,8 @@ name = "aptos-statking"
 version = "0.0.1"
 
 [dependencies]
-AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-framework/", rev = "9e7800f46230d10c805129c49cb9ed528a40e25b" }
+#AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-framework/", rev = "9e7800f46230d10c805129c49cb9ed528a40e25b" }
+AptosFramework = { local = "/Users/faria/worksapce/aptos-system/aptos-core/aptos-move/framework/aptos-framework" }
 
 [addresses]
 APTStacking = "0x01"
